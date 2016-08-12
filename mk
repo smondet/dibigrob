@@ -17,7 +17,7 @@ EOF
 
 build () {
     ocamlbuild -use-ocamlfind -package $(echo $packages | sed 's/ /,/g') dibigrob_experiment.byte
-    js_of_ocaml _build/dibigrob_experiment.byte -o _build/dibigrob_experiment.js
+    js_of_ocaml +weak.js _build/dibigrob_experiment.byte -o _build/dibigrob_experiment.js
     cat > _build/index.html <<EOF
 <!DOCTYPE html>
 <html lang="en">
