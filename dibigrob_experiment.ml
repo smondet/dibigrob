@@ -25,7 +25,7 @@ module Drawing = struct
     c##closePath;
     ()
 
-  let clickable_div ?(debug_border = true) c x y w h =
+  let clickable_div ?(debug_border = true) c x y w h ~f =
     let div = Dom_html.createDiv Dom_html.document in
     div##.id := ksprintf Js.string "test-clickable_div-%d-%d-%d-%d" x y w h;
     div##.style##.position := Js.string "absolute";
@@ -40,7 +40,7 @@ module Drawing = struct
     if debug_border then
       div##.style##.borderStyle := Js.string "dotted";
     div##.onclick := Dom_html.handler (fun _ ->
-        dbg "clickable_div clicked !!";
+        f ();
         Js._false);
     (* let parent = *)
     (*   Js.Opt.get *)
@@ -128,10 +128,26 @@ module Board = struct
     } in
     m
 
+  let attach_element {parent; _} e =
+    Dom.appendChild parent e
+
   let context {context; _} = context
 
   let as_div t = t.parent
 
+  let clear {context; canvas; parent; _} =
+    let w, h =
+      (float canvas##.clientWidth), (float canvas##.clientHeight) in
+    context##clearRect 0. 0. w h;
+    let rec rms () =
+      Js.Opt.iter parent##.lastChild (fun c ->
+          Dom.removeChild parent c;
+          rms ()
+        )
+    in
+    rms ();
+    Dom.appendChild parent canvas;
+    ()
 
   let translate_image {context; canvas; _} x y =
     (* context##save; *)
@@ -162,25 +178,48 @@ end
 module Entity = struct
 
   type t = {
-    render: Board.t -> unit;
+    render: x: int -> y: int -> Board.t -> unit;
   }
   let create render = {render}
 
   (* some example entities *)
-  let rectangle ~x ~y ~w ~h =
-    create begin fun board ->
+  let rectangle ~w ~h ?(radius = 3) ?on_click () =
+    create begin fun ~x ~y board ->
       Drawing.roundRectPath
         (Board.context board)
-        x y w h 5. `Stroke
+        (float x) (float y) (float w) (float h) (float radius) `Stroke;
+      begin match on_click  with
+      | None -> ()
+      | Some f ->
+        let _ =
+          Drawing.clickable_div
+            ~debug_border:true
+            (Board.as_div board)
+            x y w h
+            ~f
+        in
+        ()
+      end
+
     end
+
 end
 
 module Scene = struct
   type t = {
     draw_on: Board.t;
-    objects: Entity.t list;
+    mutable objects: (int * int * Entity.t) list;
   }
+
+  let render_base draw_on objects =
+    Board.clear draw_on;
+    List.iter objects ~f:(fun (x, y, {Entity.render}) -> render ~x ~y draw_on)
+
+  let translate_objects t dx dy =
+    t.objects <- List.map t.objects ~f:(fun (x, y, e) -> (x + dx, y + dy, e))
+
   let create ~draw_on objects =
+    let t = {draw_on; objects} in
     let current_translation, set_current_translation =
       React.S.create `None in
     Board.(
@@ -194,6 +233,7 @@ module Scene = struct
       let _ =
         React.E.map (fun {x; y} ->
             dbg "Mouse up %d, %d" x y;
+            render_base draw_on t.objects;
             set_current_translation `Done
           )
           draw_on.mouse.mouse_up
@@ -210,6 +250,7 @@ module Scene = struct
               let dx, dy = (dx + x - x0), (dy + y - y0) in
               dbg "In_progress, translating: %d %d" dx dy;
               Board.translate_image draw_on dx dy;
+              translate_objects t dx dy;
               set_current_translation (`Init (x, y))
             | `None | `Done ->
               dbg "THIS SHOULD NOT HAPPEN?"
@@ -218,10 +259,9 @@ module Scene = struct
       in
       ()
     );
-    {draw_on; objects}
+    t
 
-  let render t =
-    List.iter t.objects ~f:(fun {Entity.render} -> render t.draw_on)
+  let render t = render_base t.draw_on t.objects
 end
 
 
@@ -317,8 +357,12 @@ let attach_to_page () =
   Dom.appendChild base_div (Board.as_div board);
   let scene =
     Scene.create ~draw_on:board [
-      Entity.rectangle ~x:10. ~y:5. ~w:100. ~h:50.;
-      Entity.rectangle ~x:100. ~y:50. ~w:100. ~h:50.;
+      10, 5, Entity.rectangle ~w:100 ~h:50 ();
+      100, 50, Entity.rectangle ~w:100 ~h:50 ();
+      300, 50,
+      Entity.rectangle
+        ~on_click:(fun () -> dbg "Rectangle clicked!")
+        ~w:100 ~h:50 ();
     ] in
   Scene.render scene;
   (* Keep the tests around *)
