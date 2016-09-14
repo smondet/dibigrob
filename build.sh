@@ -2,7 +2,7 @@
 
 set -e
 
-packages="nonstd sosa js_of_ocaml js_of_ocaml.ppx js_of_ocaml.tyxml react reactiveData" 
+packages="nonstd sosa ppx_deriving.std js_of_ocaml js_of_ocaml.ppx js_of_ocaml.tyxml react reactiveData" 
 
 merlin () {
     cat > .merlin <<EOF

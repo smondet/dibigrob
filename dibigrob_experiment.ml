@@ -7,6 +7,78 @@ let dbg fmt =
       Firebug.console##info (Js.string s)
     ) fmt
 
+module Reactive_source = struct
+  type 'a t = {
+    signal: 'a React.S.t;
+    set: 'a -> unit;
+  }
+  let create ?eq v =
+    let signal, set = React.S.create ?eq v in
+    {signal; set}
+  let signal t = t.signal
+  let set t v = t.set v
+end
+
+
+module Graph = struct
+  module Node_id = struct
+    type t = string
+    let eq : t -> t -> bool = fun a b -> a = b
+  end
+
+  module Node = struct
+    type t = {
+      id: Node_id.t [@main];
+      forward: Node_id.t list;
+      backwards: Node_id.t list;
+    } [@@deriving make]
+    let eq a b = Node_id.eq a.id b.id
+  end
+  module Node_table = struct
+
+    type t = (Node_id.t, Node.t option Reactive_source.t) Hashtbl.t 
+
+    let get t id =
+      match Hashtbl.find t id with
+      | v -> Reactive_source.signal v
+      | exception _ ->
+        let src =
+          let eq a =
+            function
+            | None -> a = None
+            | Some v1 ->
+              begin match a with
+              | None -> false
+              | Some v2 -> Node.eq v1 v2
+              end in
+          Reactive_source.create ~eq None in
+        Hashtbl.add t id src;
+        Reactive_source.signal src
+  end
+
+  module Download_node = struct
+    type t = {url: string}
+    let get t id =
+      Lwt.(
+        Lwt_js.sleep (Random.float 2.0)
+        >>= fun () ->
+        (* let fake_node = *)
+        (*   Node.make (\* TODO *\) *)
+        return ()
+      )
+  end
+
+  type t = {
+    nodes: Node_table.t;
+    download: Download_node.t;
+  }
+
+  let get_node t id =
+    Node_table.get t.nodes id
+
+
+end
+
 module Drawing = struct
 
   let roundRectPath (c: Dom_html.canvasRenderingContext2D Js.t) x y w h r kind =
